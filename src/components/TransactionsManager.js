@@ -65,6 +65,9 @@ export default function TransactionsManager({ userId }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [syncText, setSyncText] = useState("");
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
   const [transactionForm, setTransactionForm] = useState(
@@ -172,6 +175,52 @@ export default function TransactionsManager({ userId }) {
     setCategories(categoriesResult.data ?? []);
     setTransactions(transactionsResult.data ?? []);
     setLoading(false);
+  };
+
+  const handleSyncBca = async (event) => {
+    event.preventDefault();
+
+    const trimmedText = syncText.trim();
+
+    if (!trimmedText) {
+      setSyncMessage("Paste one BCA transaction email first.");
+      return;
+    }
+
+    setSyncLoading(true);
+    setSyncMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSyncMessage("You need to sign in again.");
+      setSyncLoading(false);
+      return;
+    }
+
+    const response = await fetch("/api/sync/bca", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ rawText: trimmedText }),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setSyncMessage(payload.error || "Sync failed.");
+      setSyncLoading(false);
+      return;
+    }
+
+    setSyncText("");
+    setSyncMessage(`Saved ${payload.saved || 0} transaction(s).`);
+    await loadData();
+    setSyncLoading(false);
   };
 
   useEffect(() => {
@@ -441,6 +490,40 @@ export default function TransactionsManager({ userId }) {
         </div>
 
         <div className="grid gap-6">
+          <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
+              Gmail sync
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+              Sync BCA email
+            </h3>
+            <p className="mt-2 text-sm text-zinc-500">
+              Paste a raw BCA transaction email here for now. The parser will
+              extract the amount, merchant, and date, then dedupe by email hash.
+            </p>
+
+            <form onSubmit={handleSyncBca} className="mt-4 grid gap-4">
+              <textarea
+                value={syncText}
+                onChange={(event) => setSyncText(event.target.value)}
+                rows={8}
+                placeholder="Paste the full BCA transaction email text here..."
+                className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+              />
+              <button
+                type="submit"
+                disabled={syncLoading}
+                className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {syncLoading ? "Syncing..." : "Sync from Gmail"}
+              </button>
+            </form>
+
+            {syncMessage ? (
+              <p className="mt-4 text-sm text-zinc-600">{syncMessage}</p>
+            ) : null}
+          </section>
+
           <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
               Quick add

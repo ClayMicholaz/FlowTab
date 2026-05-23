@@ -1,5 +1,6 @@
 "use client";
 
+import AccountPasswordForm from "./AccountPasswordForm";
 import AuthForm from "./AuthForm";
 import TransactionsManager from "./TransactionsManager";
 import { useSupabaseAuth } from "./SupabaseProvider";
@@ -33,6 +34,7 @@ export default function AuthSection() {
             Sign out
           </button>
         </div>
+        <AccountPasswordForm />
         <TransactionsManager userId={session.user.id} />
       </section>
     );
@@ -42,7 +44,7 @@ export default function AuthSection() {
     <section className="mt-8 max-w-md rounded-3xl border border-zinc-200 bg-white/90 p-6 shadow-sm">
       <h2 className="text-xl font-semibold text-zinc-950">Sign in</h2>
       <p className="mt-2 text-sm text-zinc-500">
-        Magic link sign-in is enough for the first version.
+        Use email and password to sign in or create a new account.
       </p>
       <AuthForm />
     </section>

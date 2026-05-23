@@ -1,6 +1,6 @@
 # FlowTab — Personal Expense Tracker (Starter)
 
-This repo is a starter scaffold for the FlowTab app (Next.js + Supabase).
+This repo is the FlowTab app (Next.js + Supabase) with manual transaction entry and a BCA email sync flow.
 
 Quick start
 
@@ -23,9 +23,12 @@ Files created
 - `src/lib/supabaseClient.js` — Supabase client helper
 - `src/components/AuthForm.js` — Simple email sign-in form (magic link)
 - `supabase/migrations/001_init.sql` — DB schema for initial tables
+- `src/lib/bcaParser.js` — BCA email parsing helpers
+- `app/api/sync/bca/route.js` — authenticated sync endpoint for parsed BCA emails
 
 Next steps
 
 - Set up a Supabase project and create the tables using the SQL migration.
 - Add your Supabase keys to `.env.local`.
 - Run `npm run dev` and open `http://localhost:3000`.
+- Paste a raw BCA transaction email into the dashboard sync box to import it.
