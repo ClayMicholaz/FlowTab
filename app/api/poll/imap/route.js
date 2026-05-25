@@ -33,17 +33,16 @@ export async function GET() {
 
     const code = await new Promise((res) => child.on("close", res));
     if (code !== 0) {
-      return new Response(
-        JSON.stringify({ ok: false, error: errOut || "poller failed" }),
-        { status: 500 },
-      );
+      const payload = { ok: false, error: errOut || "poller failed" };
+      if (process.env.DEBUG_POLL_VERBOSE === "true") payload._out = out;
+      return new Response(JSON.stringify(payload), { status: 500 });
     }
 
     return new Response(out || JSON.stringify({ ok: true }), { status: 200 });
   } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: String(err) }), {
-      status: 500,
-    });
+    const payload = { ok: false, error: String(err) };
+    if (process.env.DEBUG_POLL_VERBOSE === "true") payload.stack = err && err.stack ? err.stack : null;
+    return new Response(JSON.stringify(payload), { status: 500 });
   }
 }
 
