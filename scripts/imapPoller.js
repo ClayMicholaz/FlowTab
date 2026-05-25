@@ -7,10 +7,30 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parseBcaEmail } = require("../src/lib/bcaParser.js");
 const Imap = require("imap-simple");
 const { simpleParser } = require("mailparser");
 const { createClient } = require("@supabase/supabase-js");
+
+let parseBcaEmail;
+try {
+  const localParserPath = path.resolve(__dirname, "bcaParser.js");
+  if (fs.existsSync(localParserPath)) {
+    ({ parseBcaEmail } = require(localParserPath));
+    console.log("Loaded parser from scripts/bcaParser.js");
+  } else {
+    const fallbackPath = path.resolve(__dirname, "..", "src", "lib", "bcaParser.js");
+    if (fs.existsSync(fallbackPath)) {
+      ({ parseBcaEmail } = require(fallbackPath));
+      console.log("Loaded parser from src/lib/bcaParser.js");
+    } else {
+      console.error("Parser not found at:", localParserPath, "or", fallbackPath);
+      throw new Error("BCA parser module not found. Ensure scripts/bcaParser.js is present in deployment.");
+    }
+  }
+} catch (err) {
+  console.error("Error loading BCA parser:", err && err.stack ? err.stack : String(err));
+  throw err;
+}
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
