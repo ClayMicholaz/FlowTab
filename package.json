@@ -13,7 +13,7 @@
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "imap-simple": "^6.0.0",
-    "mailparser": "^3.10.0",
+    "mailparser": "^3.9.8",
     "imap": "^0.8.19"
   },
   "devDependencies": {
