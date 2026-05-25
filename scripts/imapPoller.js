@@ -5,6 +5,8 @@
   causing the Next.js bundler to attempt to resolve them.
 */
 
+const fs = require("fs");
+const path = require("path");
 const { parseBcaEmail } = require("../src/lib/bcaParser.js");
 const Imap = require("imap-simple");
 const { simpleParser } = require("mailparser");
@@ -12,80 +14,231 @@ const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const LOOKBACK_DAYS = Number(process.env.IMAP_LOOKBACK_DAYS || 7);
+const ALLOW_INSECURE_TLS = process.env.IMAP_ALLOW_INSECURE_TLS === "true";
 
-function imapConfigFromEnv() {
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const contents = fs.readFileSync(filePath, "utf8");
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, equalsIndex).trim();
+    let value = line.slice(equalsIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvFile(path.resolve(process.cwd(), ".env.local"));
+
+function imapConfigFromMailbox(mailbox) {
   return {
     imap: {
-      user: process.env.IMAP_USER || process.env.MAILBOX_USER,
-      password: process.env.IMAP_PASSWORD || process.env.MAILBOX_PASSWORD,
-      host: process.env.IMAP_HOST || process.env.MAILBOX_HOST,
-      port: Number(process.env.IMAP_PORT || process.env.MAILBOX_PORT || 993),
+      user: mailbox.username,
+      password: mailbox.secret,
+      host: mailbox.host,
+      port: Number(mailbox.port || 993),
       tls: true,
       authTimeout: 30000,
+      ...(ALLOW_INSECURE_TLS
+        ? { tlsOptions: { rejectUnauthorized: false } }
+        : {}),
     },
   };
 }
 
-async function run() {
-  const config = imapConfigFromEnv();
-  const mailbox = process.env.IMAP_MAILBOX || "INBOX";
-  const filterFrom = process.env.IMAP_FILTER_FROM || "";
+function buildSearchCriteria(mailbox) {
+  const criteria = [];
+  const filterFrom = (mailbox.filter_from || "").trim();
+  const lastChecked = mailbox.last_checked
+    ? new Date(mailbox.last_checked)
+    : null;
 
-  const connection = await Imap.connect(config);
-  await connection.openBox(mailbox);
+  if (lastChecked && !Number.isNaN(lastChecked.getTime())) {
+    criteria.push(["SINCE", lastChecked]);
+  } else {
+    const fallbackSince = new Date(
+      Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    );
+    criteria.push(["SINCE", fallbackSince]);
+  }
 
-  const searchCriteria = filterFrom
-    ? ["UNSEEN", ["FROM", filterFrom]]
-    : ["UNSEEN"];
-  const fetchOptions = { bodies: ["TEXT"], markSeen: false };
-  const messages = await connection.search(searchCriteria, fetchOptions);
+  if (filterFrom) {
+    criteria.push(["FROM", filterFrom]);
+  }
 
-  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  let saved = 0;
+  return criteria;
+}
 
-  for (const item of messages) {
-    const all = item.parts.find((p) => p.which === "TEXT");
-    const raw = all ? all.body : "";
-    let parsedEmail;
-    try {
-      parsedEmail = await simpleParser(raw);
-    } catch (err) {
-      parsedEmail = { text: raw };
-    }
+async function getConfiguredMailboxes(supabaseAdmin) {
+  const { data, error } = await supabaseAdmin
+    .from("mailboxes")
+    .select(
+      "id, user_id, host, port, username, auth_method, secret, folder, filter_from, last_checked, active",
+    )
+    .eq("active", true)
+    .order("created_at", { ascending: true });
 
-    const rawText = (parsedEmail && parsedEmail.text) || raw || "";
-    const parsed = parseBcaEmail(rawText);
-    if (!parsed || !parsed.external_id) {
-      await connection.addFlags(item.attributes.uid, "\\Seen");
-      continue;
-    }
+  if (error) {
+    throw error;
+  }
 
-    const payload = {
+  if (data && data.length > 0) {
+    return data;
+  }
+
+  const fallbackHost = process.env.IMAP_HOST || process.env.MAILBOX_HOST;
+  const fallbackUser = process.env.IMAP_USER || process.env.MAILBOX_USER;
+  const fallbackPassword =
+    process.env.IMAP_PASSWORD || process.env.MAILBOX_PASSWORD;
+
+  if (!fallbackHost || !fallbackUser || !fallbackPassword) {
+    return [];
+  }
+
+  return [
+    {
+      id: "env-fallback",
       user_id: process.env.IMAP_TARGET_USER_ID || null,
-      amount: parsed.amount,
-      merchant: parsed.merchant || null,
-      category_id: null,
-      type: parsed.type || "expense",
-      transaction_date: parsed.transaction_date,
-      external_id: parsed.external_id,
-      metadata: parsed,
-    };
+      host: fallbackHost,
+      port: Number(process.env.IMAP_PORT || process.env.MAILBOX_PORT || 993),
+      username: fallbackUser,
+      auth_method: "password",
+      secret: fallbackPassword,
+      folder: process.env.IMAP_MAILBOX || "INBOX",
+      filter_from: process.env.IMAP_FILTER_FROM || "",
+      last_checked: process.env.IMAP_LAST_CHECKED || null,
+      active: true,
+    },
+  ];
+}
 
-    try {
+async function processMailbox(supabaseAdmin, mailbox) {
+  if (mailbox.auth_method && mailbox.auth_method !== "password") {
+    return {
+      mailboxId: mailbox.id,
+      saved: 0,
+      processed: 0,
+      skipped: 0,
+      error: `Unsupported auth_method: ${mailbox.auth_method}`,
+    };
+  }
+
+  const connection = await Imap.connect(imapConfigFromMailbox(mailbox));
+  let processed = 0;
+  let saved = 0;
+  let skipped = 0;
+
+  try {
+    await connection.openBox(mailbox.folder || "INBOX");
+
+    const messages = await connection.search(buildSearchCriteria(mailbox), {
+      bodies: ["TEXT"],
+      markSeen: false,
+    });
+
+    for (const item of messages) {
+      processed += 1;
+
+      const bodyPart = item.parts.find((part) => part.which === "TEXT");
+      const raw = bodyPart ? bodyPart.body : "";
+
+      let parsedEmail;
+      try {
+        parsedEmail = await simpleParser(raw);
+      } catch (err) {
+        parsedEmail = { text: raw };
+      }
+
+      const rawText = (parsedEmail && parsedEmail.text) || raw || "";
+      const parsed = parseBcaEmail(rawText);
+
+      if (!parsed || !parsed.external_id) {
+        skipped += 1;
+        continue;
+      }
+
+      const payload = {
+        user_id: mailbox.user_id,
+        amount: parsed.amount,
+        merchant: parsed.merchant || null,
+        category_id: null,
+        type: parsed.type || "expense",
+        transaction_date: parsed.transaction_date,
+        external_id: parsed.external_id,
+        metadata: parsed,
+      };
+
       const { error } = await supabaseAdmin
         .from("transactions")
         .upsert(payload, { onConflict: "external_id" });
-      if (!error) saved += 1;
-      await connection.addFlags(item.attributes.uid, "\\Seen");
-    } catch (err) {
-      try {
-        await connection.addFlags(item.attributes.uid, "\\Seen");
-      } catch (e) {}
+
+      if (error) {
+        skipped += 1;
+        continue;
+      }
+
+      saved += 1;
     }
+
+    await supabaseAdmin
+      .from("mailboxes")
+      .update({ last_checked: new Date().toISOString() })
+      .eq("id", mailbox.id);
+
+    return { mailboxId: mailbox.id, saved, processed, skipped };
+  } finally {
+    try {
+      await connection.end();
+    } catch (err) {}
+  }
+}
+
+async function run() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing Supabase environment variables");
   }
 
-  await connection.end();
-  console.log(JSON.stringify({ saved }));
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const mailboxes = await getConfiguredMailboxes(supabaseAdmin);
+
+  if (!mailboxes.length) {
+    throw new Error(
+      "No active mailboxes found and no IMAP_* fallback environment variables were provided",
+    );
+  }
+
+  const results = [];
+  let saved = 0;
+
+  for (const mailbox of mailboxes) {
+    const result = await processMailbox(supabaseAdmin, mailbox);
+    results.push(result);
+    saved += result.saved || 0;
+  }
+
+  console.log(JSON.stringify({ saved, mailboxes: results }));
 }
 
 run().catch((err) => {
