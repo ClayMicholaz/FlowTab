@@ -159,6 +159,8 @@ function parseAmountFromFields(fields) {
     fields["total payment"],
     fields["pay amount"],
     fields["amount"],
+    fields["transfer amount"],
+    fields["transfer amount"],
   ];
 
   for (const value of preferred) {

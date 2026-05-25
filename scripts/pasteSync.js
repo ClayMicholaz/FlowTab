@@ -92,7 +92,6 @@ please contact BCA
     type: parsed.type || "expense",
     transaction_date: parsed.transaction_date,
     external_id: parsed.external_id,
-    metadata: parsed,
   };
 
   const { data, error } = await supabase
