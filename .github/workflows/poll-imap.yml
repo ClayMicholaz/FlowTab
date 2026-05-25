@@ -24,9 +24,7 @@ jobs:
       - name: Run IMAP poller on runner
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://jrrbgydyhangvyyqrfdt.supabase.co
-          SUPABASE_URL: https://jrrbgydyhangvyyqrfdt.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           IMAP_ALLOW_INSECURE_TLS: ${{ secrets.IMAP_ALLOW_INSECURE_TLS }}
           IMAP_HOST: ${{ secrets.IMAP_HOST }}
           IMAP_USER: ${{ secrets.IMAP_USER }}
@@ -37,11 +35,5 @@ jobs:
           LOOKBACK_DAYS: ${{ secrets.IMAP_LOOKBACK_DAYS }}
         run: |
           set -euo pipefail
-          echo "Env presence (masked):"
-          if [ -n "${NEXT_PUBLIC_SUPABASE_URL:-}" ]; then echo "NEXT_PUBLIC_SUPABASE_URL: set"; else echo "NEXT_PUBLIC_SUPABASE_URL: missing"; fi
-          if [ -n "${SUPABASE_URL:-}" ]; then echo "SUPABASE_URL: set"; else echo "SUPABASE_URL: missing"; fi
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then echo "SUPABASE_SERVICE_ROLE_KEY: set"; else echo "SUPABASE_SERVICE_ROLE_KEY: missing"; fi
-          if [ -n "${NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then echo "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: set"; else echo "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: missing"; fi
-          if [ -n "${IMAP_ALLOW_INSECURE_TLS:-}" ]; then echo "IMAP_ALLOW_INSECURE_TLS: ${IMAP_ALLOW_INSECURE_TLS}"; else echo "IMAP_ALLOW_INSECURE_TLS: not set"; fi
           echo "Running scripts/imapPoller.js on Actions runner"
           node scripts/imapPoller.js

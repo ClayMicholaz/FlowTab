@@ -16,7 +16,6 @@ try {
   const localParserPath = path.resolve(__dirname, "bcaParser.js");
   if (fs.existsSync(localParserPath)) {
     ({ parseBcaEmail } = require(localParserPath));
-    console.log("Loaded parser from scripts/bcaParser.js");
   } else {
     const fallbackPath = path.resolve(
       __dirname,
@@ -27,7 +26,6 @@ try {
     );
     if (fs.existsSync(fallbackPath)) {
       ({ parseBcaEmail } = require(fallbackPath));
-      console.log("Loaded parser from src/lib/bcaParser.js");
     } else {
       console.error(
         "Parser not found at:",
@@ -41,10 +39,6 @@ try {
     }
   }
 } catch (err) {
-  console.error(
-    "Error loading BCA parser:",
-    err && err.stack ? err.stack : String(err),
-  );
   throw err;
 }
 
@@ -256,13 +250,6 @@ async function processMailbox(supabaseAdmin, mailbox) {
 
 async function run() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("Supabase env present:", {
-      NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      SUPABASE_URL: !!process.env.SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY:
-        !!process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
-    });
     throw new Error("Missing Supabase environment variables");
   }
 
