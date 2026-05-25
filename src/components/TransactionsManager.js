@@ -63,11 +63,23 @@ function Card({ eyebrow, title, value, hint, tone = "neutral" }) {
 export default function TransactionsManager({ userId }) {
   const [categories, setCategories] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [mailboxes, setMailboxes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [mailboxLoading, setMailboxLoading] = useState(true);
   const [error, setError] = useState("");
   const [syncText, setSyncText] = useState("");
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const [mailboxForm, setMailboxForm] = useState({
+    host: "imap.gmail.com",
+    port: "993",
+    username: "",
+    secret: "",
+    folder: "INBOX",
+    filter_from: "",
+  });
+  const [mailboxSaving, setMailboxSaving] = useState(false);
+  const [mailboxMessage, setMailboxMessage] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
   const [transactionForm, setTransactionForm] = useState(
@@ -84,6 +96,42 @@ export default function TransactionsManager({ userId }) {
       }, {}),
     [categories],
   );
+
+  const loadMailboxes = async () => {
+    setMailboxLoading(true);
+    setMailboxMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setMailboxMessage("You need to sign in again.");
+      setMailboxLoading(false);
+      return;
+    }
+
+    const response = await fetch("/api/mailboxes", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMailboxMessage(payload.error || "Unable to load mailboxes.");
+      setMailboxLoading(false);
+      return;
+    }
+
+    setMailboxes(payload.data ?? []);
+    setMailboxLoading(false);
+  };
+
+  const loadDashboard = async () => {
+    await Promise.all([loadData(), loadMailboxes()]);
+  };
 
   const dashboard = useMemo(() => {
     const totalIncome = transactions
@@ -177,6 +225,65 @@ export default function TransactionsManager({ userId }) {
     setLoading(false);
   };
 
+  const handleMailboxSubmit = async (event) => {
+    event.preventDefault();
+
+    const trimmedHost = mailboxForm.host.trim();
+    const trimmedUsername = mailboxForm.username.trim();
+    const trimmedSecret = mailboxForm.secret.trim();
+
+    if (!trimmedHost || !trimmedUsername || !trimmedSecret) {
+      setMailboxMessage("Host, username, and password are required.");
+      return;
+    }
+
+    setMailboxSaving(true);
+    setMailboxMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setMailboxMessage("You need to sign in again.");
+      setMailboxSaving(false);
+      return;
+    }
+
+    const response = await fetch("/api/mailboxes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        host: trimmedHost,
+        port: Number(mailboxForm.port || 993),
+        username: trimmedUsername,
+        auth_method: "password",
+        secret: trimmedSecret,
+        folder: mailboxForm.folder.trim() || "INBOX",
+        filter_from: mailboxForm.filter_from.trim(),
+      }),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMailboxMessage(payload.error || "Failed to register mailbox.");
+      setMailboxSaving(false);
+      return;
+    }
+
+    setMailboxForm((current) => ({
+      ...current,
+      secret: "",
+    }));
+    setMailboxMessage("Mailbox connected. Run the poller to ingest emails.");
+    await loadMailboxes();
+    setMailboxSaving(false);
+  };
+
   const handleSyncBca = async (event) => {
     event.preventDefault();
 
@@ -228,7 +335,7 @@ export default function TransactionsManager({ userId }) {
       return;
     }
 
-    loadData();
+    loadDashboard();
   }, [userId]);
 
   const resetTransactionForm = () => {
@@ -490,6 +597,191 @@ export default function TransactionsManager({ userId }) {
         </div>
 
         <div className="grid gap-6">
+          <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
+              Mailbox
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+              Connect Gmail inbox
+            </h3>
+            <p className="mt-2 text-sm text-zinc-500">
+              Register a Gmail mailbox so the poller can map BCA emails to your
+              FlowTab account automatically.
+            </p>
+
+            <form onSubmit={handleMailboxSubmit} className="mt-4 grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  IMAP host
+                  <input
+                    type="text"
+                    value={mailboxForm.host}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        host: event.target.value,
+                      }))
+                    }
+                    placeholder="imap.gmail.com"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  Port
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={mailboxForm.port}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        port: event.target.value,
+                      }))
+                    }
+                    placeholder="993"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  Gmail address
+                  <input
+                    type="email"
+                    value={mailboxForm.username}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        username: event.target.value,
+                      }))
+                    }
+                    placeholder="you@gmail.com"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  Gmail app password
+                  <input
+                    type="password"
+                    value={mailboxForm.secret}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        secret: event.target.value,
+                      }))
+                    }
+                    placeholder="16-character app password"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  Folder
+                  <input
+                    type="text"
+                    value={mailboxForm.folder}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        folder: event.target.value,
+                      }))
+                    }
+                    placeholder="INBOX"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-medium text-zinc-700">
+                  Filter from
+                  <input
+                    type="text"
+                    value={mailboxForm.filter_from}
+                    onChange={(event) =>
+                      setMailboxForm((current) => ({
+                        ...current,
+                        filter_from: event.target.value,
+                      }))
+                    }
+                    placeholder="no-reply@bca.co.id"
+                    className="rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-900"
+                  />
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={mailboxSaving}
+                className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mailboxSaving ? "Connecting..." : "Connect mailbox"}
+              </button>
+            </form>
+
+            {mailboxMessage ? (
+              <p className="mt-4 text-sm text-zinc-600">{mailboxMessage}</p>
+            ) : null}
+
+            <div className="mt-5 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-zinc-800">
+                  Connected mailboxes
+                </p>
+                <button
+                  type="button"
+                  onClick={loadMailboxes}
+                  className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {mailboxLoading ? (
+                <p className="mt-3 text-sm text-zinc-500">
+                  Loading mailboxes...
+                </p>
+              ) : mailboxes.length === 0 ? (
+                <p className="mt-3 text-sm text-zinc-500">
+                  No mailboxes connected yet.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {mailboxes.map((mailbox) => (
+                    <div
+                      key={mailbox.id}
+                      className="rounded-2xl border border-zinc-200 bg-white p-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-zinc-900">
+                            {mailbox.username}
+                          </p>
+                          <p className="text-zinc-500">
+                            {mailbox.host}:{mailbox.port} ·{" "}
+                            {mailbox.folder || "INBOX"}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+                          {mailbox.active ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                      {mailbox.filter_from ? (
+                        <p className="mt-2 text-zinc-500">
+                          Filter: {mailbox.filter_from}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-[0.24em] text-zinc-500">
               Gmail sync

@@ -1,0 +1,23 @@
+name: Scheduled IMAP Poll
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # every 15 minutes
+  workflow_dispatch: {}
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/poll/imap
+        env:
+          FLOWTAB_URL: ${{ secrets.FLOWTAB_URL }}
+        run: |
+          if [ -z "${FLOWTAB_URL}" ]; then
+            echo "Missing FLOWTAB_URL secret. Set repository secret FLOWTAB_URL to your site URL (https://your-site.example)";
+            exit 1;
+          fi
+
+          echo "Triggering poll against ${FLOWTAB_URL}/api/poll/imap"
+          curl --fail --show-error --max-time 60 --retry 2 --retry-delay 5 "${FLOWTAB_URL}/api/poll/imap" -o /tmp/poll.out || (echo "Poll failed" && cat /tmp/poll.out && exit 1)
+          echo "Poll response:" && cat /tmp/poll.out

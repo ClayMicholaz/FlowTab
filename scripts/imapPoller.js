@@ -12,11 +12,6 @@ const Imap = require("imap-simple");
 const { simpleParser } = require("mailparser");
 const { createClient } = require("@supabase/supabase-js");
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const LOOKBACK_DAYS = Number(process.env.IMAP_LOOKBACK_DAYS || 7);
-const ALLOW_INSECURE_TLS = process.env.IMAP_ALLOW_INSECURE_TLS === "true";
-
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
     return;
@@ -51,6 +46,11 @@ function loadEnvFile(filePath) {
 }
 
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const LOOKBACK_DAYS = Number(process.env.IMAP_LOOKBACK_DAYS || 7);
+const ALLOW_INSECURE_TLS = process.env.IMAP_ALLOW_INSECURE_TLS === "true";
 
 function imapConfigFromMailbox(mailbox) {
   return {
