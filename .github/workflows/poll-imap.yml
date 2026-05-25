@@ -6,45 +6,34 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  poll:
+  poll-runner:
     runs-on: ubuntu-latest
     steps:
-      - name: Call /api/poll/imap (debug)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Run IMAP poller on runner
         env:
-          FLOWTAB_URL: ${{ secrets.FLOWTAB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           IMAP_ALLOW_INSECURE_TLS: ${{ secrets.IMAP_ALLOW_INSECURE_TLS }}
-          POLL_AUTH_TOKEN: ${{ secrets.POLL_AUTH_TOKEN }}
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          IMAP_PORT: ${{ secrets.IMAP_PORT }}
+          IMAP_MAILBOX: ${{ secrets.IMAP_MAILBOX }}
+          IMAP_FILTER_FROM: ${{ secrets.IMAP_FILTER_FROM }}
+          LOOKBACK_DAYS: ${{ secrets.IMAP_LOOKBACK_DAYS }}
         run: |
           set -euo pipefail
-          if [ -z "${FLOWTAB_URL:-}" ]; then
-            echo "Missing FLOWTAB_URL secret. Set repository secret FLOWTAB_URL to your site URL (https://your-site.example)";
-            exit 1;
-          fi
-
-          URL="${FLOWTAB_URL%/}/api/poll/imap"
-          echo "Triggering poll against ${URL}"
-
-          CURL_OPTS=(--show-error --max-time 60 --retry 2 --retry-delay 5 -sS)
-          # Allow insecure TLS only when explicitly set in secrets (debugging)
-          if [ "${IMAP_ALLOW_INSECURE_TLS:-}" = "true" ]; then
-            echo "IMAP_ALLOW_INSECURE_TLS=true -> adding --insecure to curl"
-            CURL_OPTS+=(--insecure)
-          fi
-
-          HEADER_OPTS=()
-          if [ -n "${POLL_AUTH_TOKEN:-}" ]; then
-            echo "Using POLL_AUTH_TOKEN header for authentication"
-            HEADER_OPTS+=( -H "x-poll-token: ${POLL_AUTH_TOKEN}" )
-          fi
-
-          # Run curl, capture HTTP status and body for diagnostics
-          HTTP_STATUS=$(curl "${CURL_OPTS[@]}" "${HEADER_OPTS[@]}" -o /tmp/poll.out -w "%{http_code}" "${URL}" ) || true
-          echo "HTTP status: ${HTTP_STATUS}"
-          echo "--- response body ---"
-          cat /tmp/poll.out || true
-          echo "--- end response ---"
-
-          if [ "${HTTP_STATUS:-0}" -ge 400 ]; then
-            echo "Poll failed with HTTP status ${HTTP_STATUS}"
-            exit 1
-          fi
+          echo "Running scripts/imapPoller.js on Actions runner"
+          node scripts/imapPoller.js
