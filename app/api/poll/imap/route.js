@@ -41,7 +41,8 @@ export async function GET() {
     return new Response(out || JSON.stringify({ ok: true }), { status: 200 });
   } catch (err) {
     const payload = { ok: false, error: String(err) };
-    if (process.env.DEBUG_POLL_VERBOSE === "true") payload.stack = err && err.stack ? err.stack : null;
+    if (process.env.DEBUG_POLL_VERBOSE === "true")
+      payload.stack = err && err.stack ? err.stack : null;
     return new Response(JSON.stringify(payload), { status: 500 });
   }
 }

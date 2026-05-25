@@ -18,17 +18,33 @@ try {
     ({ parseBcaEmail } = require(localParserPath));
     console.log("Loaded parser from scripts/bcaParser.js");
   } else {
-    const fallbackPath = path.resolve(__dirname, "..", "src", "lib", "bcaParser.js");
+    const fallbackPath = path.resolve(
+      __dirname,
+      "..",
+      "src",
+      "lib",
+      "bcaParser.js",
+    );
     if (fs.existsSync(fallbackPath)) {
       ({ parseBcaEmail } = require(fallbackPath));
       console.log("Loaded parser from src/lib/bcaParser.js");
     } else {
-      console.error("Parser not found at:", localParserPath, "or", fallbackPath);
-      throw new Error("BCA parser module not found. Ensure scripts/bcaParser.js is present in deployment.");
+      console.error(
+        "Parser not found at:",
+        localParserPath,
+        "or",
+        fallbackPath,
+      );
+      throw new Error(
+        "BCA parser module not found. Ensure scripts/bcaParser.js is present in deployment.",
+      );
     }
   }
 } catch (err) {
-  console.error("Error loading BCA parser:", err && err.stack ? err.stack : String(err));
+  console.error(
+    "Error loading BCA parser:",
+    err && err.stack ? err.stack : String(err),
+  );
   throw err;
 }
 
@@ -67,8 +83,11 @@ function loadEnvFile(filePath) {
 
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
 const LOOKBACK_DAYS = Number(process.env.IMAP_LOOKBACK_DAYS || 7);
 const ALLOW_INSECURE_TLS = process.env.IMAP_ALLOW_INSECURE_TLS === "true";
 
@@ -241,7 +260,8 @@ async function run() {
       NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_URL: !!process.env.SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+      NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY:
+        !!process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
     });
     throw new Error("Missing Supabase environment variables");
   }
