@@ -59,14 +59,17 @@ function parseLabeledFields(text) {
     "Company/Product Name",
     "Name",
     "Admin Fee",
-    "BCA Virtual Account No"
+    "BCA Virtual Account No",
   ];
 
   const labelsPattern = knownLabels
     .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .join("|");
 
-  const separated = text.replace(new RegExp(`\\s*(?:${labelsPattern})\\s*[:：]`, "gi"), (m) => "\n" + m.trim());
+  const separated = text.replace(
+    new RegExp(`\\s*(?:${labelsPattern})\\s*[:：]`, "gi"),
+    (m) => "\n" + m.trim(),
+  );
 
   const lines = separated.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -97,7 +100,9 @@ function parseLabeledFields(text) {
     let m;
     while ((m = re.exec(text)) !== null) {
       try {
-        const key = String(m[1] || "").trim().toLowerCase();
+        const key = String(m[1] || "")
+          .trim()
+          .toLowerCase();
         const val = String(m[2] || "").trim();
         if (key) fields[key] = val;
       } catch (err) {}
