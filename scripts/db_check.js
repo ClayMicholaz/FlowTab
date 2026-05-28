@@ -54,6 +54,19 @@ async function main() {
       console.log("Transactions:", JSON.stringify(txs, null, 2));
     }
 
+    console.log("\nQuerying exact 1 rupiah transactions...");
+    const { data: oneRupiah, error: oneErr } = await supabase
+      .from("transactions")
+      .select("id, user_id, amount, external_id, transaction_date, created_at")
+      .eq("amount", 1)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (oneErr) {
+      console.error("Error fetching 1 rupiah transactions:", oneErr);
+    } else {
+      console.log("1 rupiah transactions:", JSON.stringify(oneRupiah, null, 2));
+    }
+
     console.log("\nQuerying latest mailboxes...");
     const { data: mbs, error: mbErr } = await supabase
       .from("mailboxes")

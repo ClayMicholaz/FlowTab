@@ -42,6 +42,24 @@ function parseLabeledFields(text) {
   return fields;
 }
 
+function getLabelValue(text, labels) {
+  const lines = normalizeText(text).split("\n");
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t+/g, " ").trim();
+    for (const label of labels) {
+      const regex = new RegExp(
+        `^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:：]\\s*(.+)$`,
+        "i",
+      );
+      const match = line.match(regex);
+      if (match?.[1]) {
+        return match[1].trim();
+      }
+    }
+  }
+  return "";
+}
+
 function getField(fields, names) {
   for (const name of names) {
     const value = fields[name.toLowerCase()];
@@ -156,7 +174,16 @@ function parseBcaEmail(rawText) {
   if (!text) return null;
   // Try parsing structured labeled fields first
   const fields = parseLabeledFields(text);
-  let amount = parseAmountFromFields(fields);
+  let amount =
+    parseAmountFromFields(fields) ||
+    normalizeAmount(
+      getLabelValue(text, [
+        "Transfer Amount",
+        "Total Payment",
+        "Pay Amount",
+        "Amount",
+      ]),
+    );
 
   // If labeled-field parsing failed, attempt a cleaned HTML/text fallback
   if (!amount) {
@@ -167,27 +194,17 @@ function parseBcaEmail(rawText) {
 
     // Re-run labeled-field parsing against cleaned text
     const cleanedFields = parseLabeledFields(cleaned);
-    amount = parseAmountFromFields(cleanedFields);
-
-    // Heuristic regex fallback: look for currency patterns like "Rp 12.345" or big integers
-    if (!amount) {
-      const fallbackMatch = cleaned.match(
-        /(?:Rp|IDR)?\s*([0-9]{1,3}(?:[.,\s][0-9]{3})+(?:[.,][0-9]{1,2})?|\d{4,})/i,
+    amount =
+      amount ||
+      parseAmountFromFields(cleanedFields) ||
+      normalizeAmount(
+        getLabelValue(cleaned, [
+          "Transfer Amount",
+          "Total Payment",
+          "Pay Amount",
+          "Amount",
+        ]),
       );
-      if (fallbackMatch) {
-        amount = normalizeAmount(fallbackMatch[1]);
-      }
-    }
-
-    // Last-resort simple numeric match
-    if (!amount) {
-      const simpleMatch = cleaned.match(
-        /([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|\d{4,})/,
-      );
-      if (simpleMatch) {
-        amount = normalizeAmount(simpleMatch[1]);
-      }
-    }
 
     if (amount) {
       try {
@@ -196,40 +213,13 @@ function parseBcaEmail(rawText) {
     }
   }
 
-  // Try to match labeled fields where the numeric value is on the next line
-  if (!amount) {
-    try {
-      const multiLinePatterns = [
-        /transfer amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
-        /total payment\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
-        /amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
-        /pay amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
-      ];
-
-      for (const rx of multiLinePatterns) {
-        const m = text.match(rx);
-        if (m && m[1]) {
-          const parsed = normalizeAmount(m[1]);
-          if (parsed) {
-            amount = parsed;
-            try {
-              console.warn(
-                "parseBcaEmail: extracted amount from multi-line label",
-                amount,
-              );
-            } catch (err) {}
-            break;
-          }
-        }
-      }
-    } catch (err) {}
-  }
-
   if (!amount) return null;
   const transactionDate =
     parseDateTime(getField(fields, ["transaction date"])) ||
     new Date().toISOString();
-  const referenceNo = parseReferenceNumber(fields, text);
+  const referenceNo =
+    parseReferenceNumber(fields, text) ||
+    getLabelValue(text, ["Reference No.", "Reference No", "Reference Number"]);
   const externalId = referenceNo
     ? `bca:${referenceNo}`
     : crypto.createHash("sha256").update(text).digest("hex");
