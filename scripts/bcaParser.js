@@ -34,10 +34,74 @@ function normalizeAmount(rawValue) {
 
 function parseLabeledFields(text) {
   const fields = {};
-  for (const line of text.split("\n")) {
+  if (!text) return fields;
+
+  // First attempt: normalize by ensuring known labels are on their own lines.
+  // Some emails concatenate fields on a single line; insert a newline before
+  // each known label so the per-line parser can pick them up.
+  const knownLabels = [
+    "Status",
+    "Transaction Date",
+    "Transfer Type",
+    "Source of Fund",
+    "Source Currency",
+    "Beneficiary Account",
+    "Transfer Currency",
+    "Beneficiary Name",
+    "Transfer Amount",
+    "Remarks",
+    "Reference No.",
+    "Reference No",
+    "Reference Number",
+    "Total Payment",
+    "Pay Amount",
+    "Amount",
+    "Company/Product Name",
+    "Name",
+    "Admin Fee",
+    "BCA Virtual Account No"
+  ];
+
+  const labelsPattern = knownLabels
+    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+
+  const separated = text.replace(new RegExp(`\\s*(?:${labelsPattern})\\s*[:：]`, "gi"), (m) => "\n" + m.trim());
+
+  const lines = separated.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const match = line.match(/^\s*([^:：]+?)\s*[:：]\s*(.*?)\s*$/);
     if (!match) continue;
-    fields[match[1].trim().toLowerCase()] = match[2].trim();
+    let key = match[1].trim().toLowerCase();
+    let val = match[2].trim();
+
+    // If value is empty or only a currency token (e.g. "IDR" or "Rp"),
+    // the actual numeric amount may be on the following line.
+    if (!val || /^((idr|rp)(\s|-)?|[A-Z]{2,4}\s*-?)$/i.test(val)) {
+      const next = (lines[i + 1] || "").trim();
+      if (/^[0-9.,\s]+$/.test(next)) {
+        val = (val + " " + next).trim();
+        i += 1; // consume next line
+      }
+    }
+
+    fields[key] = val;
+  }
+
+  // Fallback: some emails concatenate labeled fields on a single line
+  // (e.g. "Status : Successful Transaction Date : 28 May 2026 ...").
+  // Scan the whole text for label:value occurrences and merge them.
+  if (Object.keys(fields).length === 0) {
+    const re = /([^:：\n]{2,40}?)\s*[:：]\s*([^:：\n]{1,200})/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      try {
+        const key = String(m[1] || "").trim().toLowerCase();
+        const val = String(m[2] || "").trim();
+        if (key) fields[key] = val;
+      } catch (err) {}
+    }
   }
   return fields;
 }
