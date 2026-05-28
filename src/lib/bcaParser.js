@@ -191,8 +191,77 @@ export function parseBcaEmail(rawText) {
     return null;
   }
 
+  // Try parsing structured labeled fields first
   const fields = parseLabeledFields(text);
-  const amount = parseAmountFromFields(fields);
+  let amount = parseAmountFromFields(fields);
+
+  // If labeled-field parsing failed, attempt a safer HTML-clean fallback
+  if (!amount) {
+    const cleaned = text
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;|\u00A0/gi, " ")
+      .replace(/&amp;/gi, "&");
+
+    // Re-run labeled-field parsing against cleaned text
+    const cleanedFields = parseLabeledFields(cleaned);
+    amount = parseAmountFromFields(cleanedFields);
+
+    // Heuristic regex fallback: look for currency patterns like "Rp 12.345" or big integers
+    if (!amount) {
+      const fallbackMatch = cleaned.match(
+        /(?:Rp|IDR)?\s*([0-9]{1,3}(?:[.,\s][0-9]{3})+(?:[.,][0-9]{1,2})?|\d{4,})/i,
+      );
+      if (fallbackMatch) {
+        amount = normalizeAmount(fallbackMatch[1]);
+      }
+    }
+
+    // Last-resort simple numeric match
+    if (!amount) {
+      const simpleMatch = cleaned.match(
+        /([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|\d{4,})/,
+      );
+      if (simpleMatch) {
+        amount = normalizeAmount(simpleMatch[1]);
+      }
+    }
+
+    if (amount) {
+      try {
+        console.warn("parseBcaEmail: fallback amount extracted", amount);
+      } catch (err) {}
+    }
+  }
+
+  // Try to match labeled fields where the numeric value is on the next line
+  if (!amount) {
+    try {
+      const multiLinePatterns = [
+        /transfer amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
+        /total payment\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
+        /amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
+        /pay amount\s*[:：][\s\S]{0,60}?([0-9.,]+)/i,
+      ];
+
+      for (const rx of multiLinePatterns) {
+        const m = text.match(rx);
+        if (m && m[1]) {
+          const parsed = normalizeAmount(m[1]);
+          if (parsed) {
+            amount = parsed;
+            try {
+              console.warn(
+                "parseBcaEmail: extracted amount from multi-line label",
+                amount,
+              );
+            } catch (err) {}
+            break;
+          }
+        }
+      }
+    } catch (err) {}
+  }
+
   if (!amount) {
     return null;
   }
@@ -200,7 +269,19 @@ export function parseBcaEmail(rawText) {
   const transactionDate =
     parseDateTime(getField(fields, ["transaction date"])) ||
     new Date().toISOString();
-  const referenceNo = parseReferenceNumber(fields, text);
+  // Prefer reference from labeled fields; if missing, try cleaned-text regex
+  let referenceNo = parseReferenceNumber(fields, text);
+  if (!referenceNo) {
+    try {
+      const cleaned = text
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;|\u00A0/gi, " ");
+      const refMatch =
+        cleaned.match(/reference\s*(?:no\.?|no)\s*[:\-]?\s*(\S+)/i) ||
+        cleaned.match(/ref(?:erence)?\s*[:\-]?\s*(\S+)/i);
+      if (refMatch) referenceNo = refMatch[1].trim();
+    } catch (err) {}
+  }
   const externalId = referenceNo
     ? `bca:${referenceNo}`
     : crypto.createHash("sha256").update(text).digest("hex");

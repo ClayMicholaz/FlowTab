@@ -204,10 +204,29 @@ async function processMailbox(supabaseAdmin, mailbox) {
         parsedEmail = { text: raw };
       }
 
-      const rawText = (parsedEmail && parsedEmail.text) || raw || "";
+      // Prefer plaintext, but fall back to HTML content if plaintext is empty
+      const rawText =
+        (parsedEmail && (parsedEmail.text || parsedEmail.html)) || raw || "";
       const parsed = parseBcaEmail(rawText);
 
       if (!parsed || !parsed.external_id) {
+        try {
+          console.warn(
+            "Parser returned no transaction or missing external_id. Raw text preview:",
+            rawText.slice(0, 240),
+          );
+          console.warn("Parser output:", JSON.stringify(parsed));
+        } catch (err) {}
+
+        // Save full raw text for manual inspection
+        try {
+          const outDir = path.resolve(__dirname, "skipped_emails");
+          if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+          const fname = path.join(outDir, `${mailbox.id}-${Date.now()}.txt`);
+          fs.writeFileSync(fname, rawText, "utf8");
+          console.warn("Saved skipped email to", fname);
+        } catch (err) {}
+
         skipped += 1;
         continue;
       }
@@ -220,19 +239,35 @@ async function processMailbox(supabaseAdmin, mailbox) {
         type: parsed.type || "expense",
         transaction_date: parsed.transaction_date,
         external_id: parsed.external_id,
-        metadata: parsed,
+        // Note: omit `metadata` column if it doesn't exist in the DB schema
       };
 
-      const { error } = await supabaseAdmin
-        .from("transactions")
-        .upsert(payload, { onConflict: "external_id" });
+      // Log parsed payload for debugging
+      try {
+        console.log(
+          "Parsed transaction:",
+          JSON.stringify({
+            external_id: payload.external_id,
+            user_id: payload.user_id,
+            amount: payload.amount,
+            transaction_date: payload.transaction_date,
+          }),
+        );
+      } catch (err) {}
 
-      if (error) {
+      const { data: upsertData, error: upsertError } = await supabaseAdmin
+        .from("transactions")
+        .upsert(payload, { onConflict: "external_id" })
+        .select("id, external_id");
+
+      if (upsertError) {
+        console.error("Upsert error for payload:", JSON.stringify(payload));
+        console.error(upsertError);
         skipped += 1;
         continue;
       }
 
-      saved += 1;
+      saved += upsertData && upsertData.length ? upsertData.length : 1;
     }
 
     await supabaseAdmin
